@@ -1,0 +1,45 @@
+name: Build ChessVision EXE
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download latest Windows Stockfish binary
+        shell: pwsh
+        run: |
+          $headers = @{ Authorization = "Bearer ${{ secrets.GITHUB_TOKEN }}" }
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/official-stockfish/Stockfish/releases/latest" -Headers $headers
+          $asset = $release.assets | Where-Object { $_.name -like "*windows-x86-64*.zip" } | Select-Object -First 1
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "stockfish.zip"
+          Expand-Archive -Path "stockfish.zip" -DestinationPath "sf_extracted" -Force
+          $exe = Get-ChildItem -Path "sf_extracted" -Recurse -Filter "stockfish*.exe" | Select-Object -First 1
+          Copy-Item -Path $exe.FullName -Destination "stockfish.exe"
+
+      - name: Compile standalone EXE with PyInstaller
+        run: |
+          pyinstaller --onefile --noconsole --name "ChessVision" --add-binary "stockfish.exe;." app.py
+
+      - name: Upload ChessVision.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChessVision-Windows
+          path: dist/ChessVision.exe
